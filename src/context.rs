@@ -11,6 +11,7 @@
 // FIXME: Silence the warning for `Registers`
 #![allow(improper_ctypes)]
 
+use std::ptr;
 use stack::Stack;
 use std::usize;
 #[cfg(target_arch = "x86_64")]
@@ -86,6 +87,30 @@ impl Context {
                 Some((stack_base as usize, sp as usize))
             };
     }
+
+    pub fn init_with_unboxed(&mut self, init: InitFn, arg: usize, stack: &mut Stack)
+    {
+        let sp: *const usize = stack.end();
+        let sp: *mut usize = sp as *mut usize;
+        // Save and then immediately load the current context,
+        // which we will then modify to call the given function when restored
+
+        initialize_call_frame(&mut self.regs, init, arg, ptr::null::<libc::c_void>() as *mut libc::c_void, sp);
+
+        // Scheduler tasks don't have a stack in the "we allocated it" sense,
+        // but rather they run on pthreads stacks. We have complete control over
+        // them in terms of the code running on them (and hopefully they don't
+        // overflow). Additionally, their coroutine stacks are listed as being
+        // zero-length, so that's how we detect what's what here.
+        let stack_base: *const usize = stack.start();
+        self.stack_bounds =
+            if sp as libc::uintptr_t == stack_base as libc::uintptr_t {
+                None
+            } else {
+                Some((stack_base as usize, sp as usize))
+            };
+    }
+
 
     /// Switch contexts
 
